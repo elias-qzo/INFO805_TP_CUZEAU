@@ -1,0 +1,6 @@
+let a = input;
+let b = input;
+while (0 < b)
+do (let aux=(a mod b); let a=b; let b=aux );
+output a
+.

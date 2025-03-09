@@ -1,0 +1,5 @@
+let a = input;
+let b = input;
+let c = 0;
+if (a < b) then let c = 10 else let c = 20;
+output c .

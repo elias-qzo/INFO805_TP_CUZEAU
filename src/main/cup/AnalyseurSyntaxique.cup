@@ -1,0 +1,341 @@
+/* package et imports */
+package fr.usmb.m1isc.compilation.tp;
+import java_cup.runtime.Symbol;
+import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
+
+/* inclusion du code */
+
+action code {:
+    // HashMap pour la gestion des variables, si nécessaire
+    private HashMap<String,Integer> vars = new HashMap<>();
+    // gestion des erreurs d'evaluation
+    private boolean erreur = false;
+
+    public static class Node {
+        String value;
+        static int labelCounter = 0;
+        static HashMap<String,Integer> vars = new HashMap<>();
+        ArrayList<String> dataSegmentInstructions = new ArrayList<>();
+        static ArrayList<String> codeSegmentInstructions = new ArrayList<>();
+        static List<String> variables = new ArrayList<>();
+
+
+        Node left;
+        Node right;
+        
+        public Node(String value) {
+            this.value = value;
+            this.left = null;
+            this.right = null;
+        }
+        
+        public Node(String value, Node left, Node right) {
+            this.value = value;
+            this.left = left;
+            this.right = right;
+        }
+        
+        @Override
+        public String toString() {
+            return toStringHelper("", false);
+        }
+        
+        private String toStringHelper(String prefix, boolean isLeft) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(prefix).append(isLeft ? "├── " : "└── ").append(value).append("\n");
+            
+            String newPrefix = prefix + (isLeft ? "│   " : "    ");
+            if (left != null) sb.append(left.toStringHelper(newPrefix, true));
+            if (right != null) sb.append(right.toStringHelper(newPrefix, false));
+            
+            return sb.toString();
+        }
+
+
+
+        public static String getMatchingCase(String str) {
+            if (str.matches("\\d+")) {
+                return "NUMERIC";
+            } else if (str.matches("[a-zA-Z0-9]+")) {
+                return "ALPHANUMERIC";
+            }
+            return "UNKNOWN";
+        }
+
+        public void evaluate(Node n) {
+            String matchingCase = getMatchingCase(n.value);
+            switch(matchingCase){
+                case "NUMERIC":
+                    codeSegmentInstructions.add("\tmov eax, "+n.value+"\n");
+                    break;
+                case "ALPHANUMERIC":
+                    switch(n.value){
+                        case "INPUT":
+                            codeSegmentInstructions.add("\tin eax\n");
+                            break;
+                        default:
+                            codeSegmentInstructions.add("\tmov eax, "+n.value+"\n");
+                            break;
+                    }
+                    break;
+                default:
+                    break;
+            }
+            switch (n.value) {
+                case "+":
+                    evaluate(n.left);
+                    codeSegmentInstructions.add("\tpush eax\n");
+                    evaluate(n.right);
+                    codeSegmentInstructions.add("\tpop ebx\n");
+                    codeSegmentInstructions.add("\tadd eax, ebx\n");
+                    break;
+                case "-":
+                    evaluate(n.left);
+                    codeSegmentInstructions.add("\tpush eax\n");
+                    evaluate(n.right);
+                    codeSegmentInstructions.add("\tpop ebx\n");
+                    codeSegmentInstructions.add("\tsub eax, ebx\n");
+                    break;
+                case "/":
+                    evaluate(n.left);
+                    codeSegmentInstructions.add("\tpush eax\n");
+                    evaluate(n.right);
+                    codeSegmentInstructions.add("\tpop ebx\n");
+                    codeSegmentInstructions.add("\tdiv ebx, eax\n");
+                    codeSegmentInstructions.add("\tmov eax, ebx\n"); 
+                    break;
+                case "*":
+                    evaluate(n.left);
+                    codeSegmentInstructions.add("\tpush eax\n");
+                    evaluate(n.right);
+                    codeSegmentInstructions.add("\tpop ebx\n");
+                    codeSegmentInstructions.add("\tmul eax, ebx\n");
+                    break;
+                case "<":
+                case ">":
+                case "<=":
+                case ">=":
+                    int labelId = labelCounter++;
+                    evaluate(n.left);
+                    codeSegmentInstructions.add("\tpush eax\n");
+                    evaluate(n.right);
+                    codeSegmentInstructions.add("\tpop ebx\n");
+                    codeSegmentInstructions.add("\tsub ebx, eax\n");
+                    String jumpInstruction = "";
+                    switch (n.value) {
+                        case "<":
+                            jumpInstruction = "jl";
+                            break;
+                        case ">":
+                            jumpInstruction = "jg";
+                            break;
+                        case "<=":
+                            jumpInstruction = "jle";
+                            break;
+                        case ">=":
+                            jumpInstruction = "jge";
+                            break;
+                    }
+
+                    codeSegmentInstructions.add("\t" + jumpInstruction + " vrai_"+jumpInstruction+"_" + labelId + "\n");
+                    codeSegmentInstructions.add("\tmov eax, 0\n");
+                    codeSegmentInstructions.add("\tjmp fin_"+jumpInstruction+"_" + labelId + "\n");
+                    codeSegmentInstructions.add("vrai_"+jumpInstruction+"_" + labelId + ":\n");
+                    codeSegmentInstructions.add("\tmov eax, 1\n");
+                    codeSegmentInstructions.add("fin_"+jumpInstruction+"_" + labelId + ":\n");
+                    break;
+
+                case "%":
+                    evaluate(n.left);
+                    codeSegmentInstructions.add("\tpush eax\n");
+                    evaluate(n.right);
+                    codeSegmentInstructions.add("\tpop ebx\n");
+                    codeSegmentInstructions.add("\tmov ecx, eax\n");
+                    codeSegmentInstructions.add("\tmov eax, ebx\n");
+                    codeSegmentInstructions.add("\tdiv ebx, ecx\n");
+                    codeSegmentInstructions.add("\tmul ebx, ecx\n");
+                    codeSegmentInstructions.add("\tsub eax, ebx\n");
+                    break;
+                default:
+                    break;
+            }
+        }
+
+
+        public void compile(Node n){
+            switch(n.value){
+                case ";":
+                    compile(n.left);
+                    compile(n.right);
+                    break;
+                case "LET":
+                    evaluate(n.right);
+                    codeSegmentInstructions.add("\tmov "+n.left.value+", eax\n");
+                    if(!variables.contains(n.left.value)){
+                        dataSegmentInstructions.add("\t"+n.left.value+" DD\n");    
+                        variables.add(n.left.value);              
+                    }
+                    break;
+                case "WHILE":
+                    int currentLabel = labelCounter++;
+                    codeSegmentInstructions.add("debut_while_" + currentLabel + ":\n");
+                    evaluate(n.left);
+                    codeSegmentInstructions.add("\tjz fin_while_" + currentLabel + "\n");
+                    compile(n.right);
+                    codeSegmentInstructions.add("\tjmp debut_while_" + currentLabel + "\n");
+                    codeSegmentInstructions.add("fin_while_" + currentLabel + ":\n");
+                    break;
+                case "IF":
+                    int ifLabel = labelCounter++;
+                    evaluate(n.left);
+                    codeSegmentInstructions.add("\tjz else_" + ifLabel + "\n");
+                    compile(n.right.left);
+                    codeSegmentInstructions.add("\tjmp fin_if_" + ifLabel + "\n");
+                    codeSegmentInstructions.add("else_" + ifLabel + ":\n");
+                    compile(n.right.right);
+                    codeSegmentInstructions.add("fin_if_" + ifLabel + ":\n");
+                    break;
+                case "OUTPUT":
+                    evaluate(n.left);
+                    codeSegmentInstructions.add("\tout eax\n");
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        public String compilationResult(){
+            String res = "";
+            res += "DATA SEGMENT\n";
+            for (String ds : dataSegmentInstructions) {
+                res+=ds;
+            }
+            res += "DATA ENDS\n";
+            res += "CODE SEGMENT\n";
+            for (String cs : codeSegmentInstructions) {
+                res+=cs;
+            }
+            res += "CODE ENDS\n";
+            return res;
+        }
+    }
+:};
+
+
+ 
+parser code {:
+    // pour le parser (redefinition de la methode reportant les erreurs d'analyse)
+    public void report_error(String message, Object info) {
+        String m = "";
+        if (info instanceof java_cup.runtime.Symbol) {
+            Symbol s = ((Symbol) info);     
+            if (s != null && s.left >= 0 ) {
+                /* Ajoute le numero de ligne  et de colonne*/
+                m =  "Ligne " + (s.left+1) + ", Colonne " + (s.right+1) + " : ";
+            }
+        }
+        m = m + message;
+        System.err.println(m);
+    }
+:};
+
+ init with {:
+    //    initialisation du parser
+:};
+
+/* symboles terminaux */
+terminal PLUS, MOINS, MOINS_UNAIRE, MUL, DIV, MOD, NOT, OR, AND, PAR_G, PAR_D, SEMI, POINT, LET, INPUT, OUTPUT, IF, THEN, ELSE, WHILE, DO, EGAL, LT, LTE, GT, GTE, NIL, ERROR; 
+terminal Integer ENTIER;
+terminal String IDENT;
+/* non terminaux */
+non terminal program, sequence, expression, expr;
+
+precedence nonassoc OUTPUT;
+precedence right OR;
+precedence right AND;
+precedence right NOT;
+precedence nonassoc EGAL;
+precedence nonassoc LT, LTE;
+precedence nonassoc GT, GTE;
+precedence left PLUS, MOINS;
+precedence left MUL, DIV, MOD;
+precedence left MOINS_UNAIRE;
+
+/* grammaire */
+// un pg est une sequence d'insctions terminee par point
+program ::= 
+    sequence:s POINT
+    {:
+        Node arbre = (Node) s;
+        System.out.println("Arbre final : \n" + arbre.toString());
+        arbre.compile(arbre);
+        System.out.println(arbre.compilationResult());
+        RESULT = arbre;
+    :}
+    ;
+
+// une sequence est une suite d'instructions separes par des point virgules 
+sequence ::= expression:e1 SEMI sequence:e2
+            {:
+                RESULT = new Node(";", (Node)e1, (Node)e2);
+            :}
+            | expression:e
+            {:
+                RESULT = (Node) e; 
+            :}
+            |
+            {:
+                RESULT = new Node("EMPTY");
+            :}
+            ;
+
+// une expession est soit une affectation ,une              
+expression ::= expr:e
+            {:
+                RESULT = (Node) e; 
+            :}
+             | LET IDENT:nom EGAL expr:e
+            {:
+                Node left = new Node(String.valueOf(nom));
+                Node right = (Node) e;
+                RESULT = new Node("LET", left, right);
+            :}
+             | WHILE expr:cond DO expression:e
+            {:
+                Node left = (Node) cond;
+                Node right = (Node) e;
+                RESULT = new Node("WHILE", left, right);
+            :}
+             | IF expr:cond THEN expression:a1 ELSE expression:a2
+            {:
+                Node left = (Node) cond;
+                Node right = new Node("THEN", (Node) a1, (Node) a2);
+                RESULT = new Node("IF", left, right);
+            :}
+             | error // reprise d'erreurs
+             ;
+
+// expression arithmetiques et logiques 
+expr ::= NOT:op expr:e
+       | expr:e1 AND expr:e2  {: RESULT = new Node("&&", (Node) e1, (Node) e2); :}
+       | expr:e1 OR expr:e2  {: RESULT = new Node("||", (Node) e1, (Node) e2); :}
+       | expr:e1 EGAL expr:e2  {: RESULT = new Node("=", (Node) e1, (Node) e2); :}
+       | expr:e1 LT expr:e2  {: RESULT = new Node("<", (Node) e1, (Node) e2); :}
+       | expr:e1 LTE expr:e2 {: RESULT = new Node("<=", (Node) e1, (Node) e2); :}
+       | expr:e1 GT expr:e2  {: RESULT = new Node(">", (Node) e1, (Node) e2); :}
+       | expr:e1 GTE expr:e2 {: RESULT = new Node(">=", (Node) e1, (Node) e2); :}
+       | expr:e1 PLUS expr:e2  {: RESULT = new Node("+", (Node) e1, (Node) e2); :}
+       | expr:e1 MOINS expr:e2  {: RESULT = new Node("-", (Node) e1, (Node) e2); :}
+       | expr:e1 MUL expr:e2  {: RESULT = new Node("*", (Node) e1, (Node) e2); :}
+       | expr:e1 DIV expr:e2  {: RESULT = new Node("/", (Node) e1, (Node) e2); :}
+       | expr:e1 MOD expr:e2  {: RESULT = new Node("%", (Node) e1, (Node) e2); :}
+       | MOINS expr:e {: RESULT = new Node("NEG", (Node) e, null); :} %prec MOINS_UNAIRE 
+       | OUTPUT expr:e {: RESULT = new Node("OUTPUT", (Node) e, null); :}
+       | INPUT {: RESULT = new Node("INPUT", null, null); :}
+       | NIL
+       | ENTIER:n {: RESULT = new Node(String.valueOf(n)); :}
+       | IDENT:id {: RESULT = new Node(String.valueOf(id)); :}
+       | PAR_G sequence:e PAR_D {: RESULT = e ; :}
+       ;

@@ -1,0 +1,66 @@
+plugins {
+    // Apply the java plugin to add support for Java
+    id 'java'
+    //id 'eclipse'
+    id "org.xbib.gradle.plugin.jflex" version "1.7.0"
+    id 'org.hvb.java-cup' version '0.1+'
+}
+
+// In this section you declare where to find the dependencies of your project
+repositories {
+    // You can declare any Maven/Ivy/file repository here.
+    mavenCentral()
+}
+
+sourceSets {
+    main {
+        java {
+            //sourceCompatibility = 1.8
+            //targetCompatibility = 1.8
+            // srcDir 'src/main/java'
+        }
+        jflex {
+            // srcDir 'src/main/jflex'
+        }
+        cup {
+            // srcDir 'src/main/cup'
+        }
+    }
+}
+
+jflex {
+    no_backup = true
+    verbose = true
+    encoding = 'UTF-8'
+}
+
+cup {
+    locations = false
+    time = false
+    dump = false
+    progress = false
+    debug = false
+}
+
+compileJava.options.encoding = 'UTF-8'
+
+jar {
+    // on ajoute les dependances, ie le runtime cup
+    // car on en a besoin pour faire tourner l'analyseur 
+    from {
+        configurations.runtimeClasspath.collect {
+            it.isDirectory() ? it : zipTree(it)
+        }
+    }
+    manifest {
+        attributes  'Main-Class': 'fr.usmb.m1isc.compilation.tp.Main'
+    }
+}
+
+build.mustRunAfter clean
+
+// on configure le plugin eclipse s'il est actif
+pluginManager.withPlugin('eclipse'){
+    // tasks to run when build automatically is enabled
+    eclipse.autoBuildTasks([tasks.named('generateCup'), tasks.named('generateJflex')])
+} 

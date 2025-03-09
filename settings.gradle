@@ -1,0 +1,10 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        maven {
+          url 'https://gitlab.com/api/v4/projects/35519225/packages/maven'
+        }
+    }
+}
+
+//rootProject.name = 'I805_TP2_Lambada'
